@@ -32,33 +32,37 @@ import java.io.File
 class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
 // ==================== Colors (暗黑主题, 匹配参考图: 近纯黑面板 + 白字 + 蓝色高亮) ====================
-private val ACCENT = 0xFF5599FFL.toInt()           // 亮蓝 (开启/激活)
-private val ACCENT_DARK = 0x665599FFL.toInt()
+private val ACCENT = 0xFF6688FFL.toInt()           // 亮蓝 (开启/激活)
+private val ACCENT_DARK = 0x666688FFL.toInt()
 private val BG = 0xF00E0E12L.toInt()               // 面板背景: 近纯黑微透明
 private val PANEL_BG = 0xEE0E0E12L.toInt()
 private val TEXT get() = ModuleClickGui.getTextColor()
-private val TEXT_BRIGHT = 0xFF5599FFL.toInt()       // 开启模块名亮蓝
+private val TEXT_BRIGHT = 0xFF6688FFL.toInt()       // 开启模块名亮蓝
 private val TEXT_DIM get() = 0xFFAAAAAAL.toInt()   // 关闭模块名浅灰
 private val CATEGORY_TITLE = 0xFFFFFFFFL.toInt()    // 分类标题纯白
 private val TAB_BG = 0x801A1A1EL.toInt()
 private val TAB_ACTIVE = 0xFF222228L.toInt()
 private val BORDER = 0x15FFFFFFL.toInt()
 private val HOVER = 0x12FFFFFFL.toInt()
-private val SCROLL_TRACK = 0x155599FFL.toInt()
-private val SCROLL_THUMB = 0x405599FFL.toInt()
-private val SCROLL_THUMB_HOVER = 0x605599FFL.toInt()
-private val EXPANDED_BG = 0x085599FFL.toInt()
-private val GROUP_BG = 0x0A5599FFL.toInt()
-private val GROUP_LINE = 0x105599FFL.toInt()
+private val SCROLL_TRACK = 0x206688FFL.toInt()
+private val SCROLL_THUMB = 0x586688FFL.toInt()
+private val SCROLL_THUMB_HOVER = 0x786688FFL.toInt()
+private val EXPANDED_BG = 0x086688FFL.toInt()
+private val GROUP_BG = 0x0A6688FFL.toInt()
+private val GROUP_LINE = 0x106688FFL.toInt()
 private val SETTING_CHILD_BG = 0x04FFFFFFL.toInt()
-private val OVERLAY = 0xC0000000L.toInt()            // 全局半透明黑背景
+private val OVERLAY = 0x90000000L.toInt()            // 全局半透明黑背景
 private val SETTING_BG = 0x40080810L.toInt()
+// 【新增】开关样式颜色
+private val TOGGLE_ON = 0xFF6688FFL.toInt()          // 开启状态填充色
+private val TOGGLE_OFF_BORDER = 0x40FFFFFFL.toInt() // 关闭状态边框
+private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
 
     // ==================== Layout ====================
     private val CORNER = 6f
     private val ITEM_H = 17f
     private val SETTING_H = 17f
-    private val SCROLL_W = 4f
+    private val SCROLL_W = 3f
     private val PADDING = 5f
     private val SETTING_INDENT = 8f
     private val PANEL_GAP = 0f
@@ -456,8 +460,8 @@ private val SETTING_BG = 0x40080810L.toInt()
                 val arrow = if (panel.collapsed) "–" else "+"
                 val arrowX = (px + pw - 10f - font.width(arrow) * TEXT_SCALE).roundToInt()
                 drawText(ctx, font, "§l$arrow", arrowX, (py + 4f).toInt(), CATEGORY_TITLE)
-                val lineWidth = font.width(category.tag) + 10f
-                fillRect(ctx, px + 8f, py + HEADER_H - 2f, px + 8f + lineWidth, py + HEADER_H - 1f, ACCENT_DARK)
+                // 【修改】底部蓝紫细条: 通宽面板, 1px 细线
+                fillRect(ctx, px, py + HEADER_H - 1f, px + pw, py + HEADER_H, ACCENT_DARK)
             }
 
             if (panel.collapsed) {
@@ -583,11 +587,12 @@ private val SETTING_BG = 0x40080810L.toInt()
             }
         }
 
-        val searchY = sh - 30f
-        val searchX = (sc - 160f) / 2f
-        val searchW = 160f
-        fillRect(ctx, searchX, searchY, searchX + searchW, searchY + 16f, TAB_BG)
-        drawRoundedRect(ctx, searchX, searchY, searchW, 16f, 2f, BORDER)
+        // 【修改】搜索框移到最上方正中间, 黑色圆角样式
+        val searchW = 180f
+        val searchH = 18f
+        val searchX = (sc - searchW) / 2f
+        val searchY = 6f
+        drawRoundedRect(ctx, searchX, searchY, searchW, searchH, 5f, SEARCH_BG)
 
         if (searchText.isEmpty()) {
             drawText(ctx, font, "§7Search modules...", (searchX + 4f).toInt(), (searchY + 3f).toInt(), TEXT_DIM)
@@ -600,7 +605,7 @@ private val SETTING_BG = 0x40080810L.toInt()
             if (cursorX < searchX + searchW - 4) {
                 val blink = System.currentTimeMillis() / 500 % 2 == 0L
                 if (blink) {
-                    fillRect(ctx, cursorX, searchY.toInt() + 2, cursorX + 1, searchY.toInt() + 14, TEXT_BRIGHT)
+                    fillRect(ctx, cursorX, (searchY + 3f).toInt(), cursorX + 1, (searchY + 15f).toInt(), TEXT_BRIGHT)
                 }
             }
         }
@@ -744,14 +749,24 @@ private val SETTING_BG = 0x40080810L.toInt()
                 drawText(ctx, font, "$arrow ${trimText(font, v.name, groupMaxW)}", labelX, (y + 4f).toInt(), if (isCollapsed) TEXT_DIM else ACCENT)
             }
             actual is Boolean -> {
-                val nameMaxW = (toggleX - labelX - 2).coerceAtLeast(10)
+                val nameMaxW = (toggleX - labelX - 28).coerceAtLeast(10)   // 留出开关空间
                 drawText(ctx, font, trimText(font, v.name, nameMaxW), labelX, (y + 4f).toInt(), TEXT_DIM)
-                val status = if (actual) {
-                    "§aON"
+                // 【修改】ON/OFF 文字改为圆角药丸开关 (仿图: 开启=蓝紫填充, 关闭=灰色边框)
+                val tw = 20f
+                val th = 10f
+                val tx = toggleX
+                val ty = y.toInt() + 3f
+                if (actual) {
+                    // 开启状态: 蓝紫填充圆角矩形
+                    drawRoundedRect(ctx, tx, ty, tw, th, th / 2f, TOGGLE_ON)
+                    // 右侧白色小圆点
+                    fillRect(ctx, tx + tw - 7f, ty + 1.5f, tx + tw - 3f, ty + th - 1.5f, 0xFFFFFFFF.toInt())
                 } else {
-                    "§cOFF"
+                    // 关闭状态: 灰色边框圆角矩形
+                    drawRoundedRect(ctx, tx, ty, tw, th, th / 2f, TOGGLE_OFF_BORDER)
+                    // 左侧灰色小圆点
+                    fillRect(ctx, tx + 3f, ty + 1.5f, tx + 7f, ty + th - 1.5f, 0x80FFFFFF.toInt())
                 }
-                drawText(ctx, font, status, toggleX, (y + 4f).toInt(), if (actual) ACCENT else TEXT_DIM)
             }
             isBindValue(v) -> {
                 drawText(ctx, font, trimText(font, v.name, labelMaxW), labelX, (y + 4f).toInt(), TEXT_DIM)
@@ -770,12 +785,12 @@ private val SETTING_BG = 0x40080810L.toInt()
                 val sliderY = y.toInt() + 8
                 val isRange = layout.rangeWidth > 0f || layout.upperPointX != 0
 
-                fillRect(ctx, layout.sliderX, sliderY, layout.sliderX + layout.sliderW, sliderY + 2, 0x30FFFFFF.toInt())
+                fillRect(ctx, layout.sliderX, sliderY, layout.sliderX + layout.sliderW, sliderY + 1, 0x40FFFFFF.toInt())
 
                 if (isRange) {
                     val lx = layout.lowerPointX
                     val ux = layout.upperPointX.coerceAtLeast(lx + 2)
-                    fillRect(ctx, lx, sliderY, ux, sliderY + 2, ACCENT)
+                    fillRect(ctx, lx, sliderY, ux, sliderY + 1, ACCENT)
                     fillRect(ctx, lx - 2, sliderY - 3, lx + 2, sliderY + 5, TEXT_BRIGHT)
                     fillRect(ctx, ux - 2, sliderY - 3, ux + 2, sliderY + 5, TEXT_BRIGHT)
                 } else {
@@ -784,7 +799,7 @@ private val SETTING_BG = 0x40080810L.toInt()
                     } else {
                         0f
                     }
-                    fillRect(ctx, layout.sliderX, sliderY, layout.sliderX + (layout.sliderW * progress).toInt(), sliderY + 2, ACCENT)
+                    fillRect(ctx, layout.sliderX, sliderY, layout.sliderX + (layout.sliderW * progress).toInt(), sliderY + 1, ACCENT)
                     fillRect(ctx, layout.sliderX + (layout.sliderW * progress).toInt() - 1, sliderY - 1, layout.sliderX + (layout.sliderW * progress).toInt() + 1, sliderY + 3, TEXT_BRIGHT)
                 }
                 drawText(ctx, font, layout.valText, layout.valX, (y + 3f).toInt(), TEXT_DIM)

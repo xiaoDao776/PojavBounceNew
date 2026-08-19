@@ -158,7 +158,7 @@ object ModuleArrayList : ClientModule("ArrayList[fix+skid]", ModuleCategories.RE
     private val shadowDensity by int("Shadow Density", 6, 0..10)
 
     // ==================== 水印 ====================
-    private val waterMarkEnabled by boolean("WaterMark", true)
+    private val waterMarkEnabled by boolean("WaterMark", false)
     private val waterMarkText by text("WaterMark Text", "LiquidBounce 0.39")
     private val waterMarkScale by float("WaterMark Scale", 1.0f, 0.5f..3.0f)
     private val waterMarkX by int("WaterMark X", 4, -2000..2000)
