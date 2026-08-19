@@ -301,9 +301,7 @@ private val SETTING_BG = 0x40080810L.toInt()
 
     override fun extractRenderState(ctx: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, delta: Float) {
         // 【新增】全局半透明黑背景 (高性能: 单次 fillRect 覆盖全屏, 无额外开销)
-        val sc = minecraft!!.window.guiScaledWidth
-        val sh = minecraft!!.window.guiScaledHeight
-        ctx.fill(0, 0, sc, sh, OVERLAY)
+        ctx.fill(0, 0, minecraft!!.window.guiScaledWidth, minecraft!!.window.guiScaledHeight, OVERLAY)
 
         // 【丝滑动画】整体淡入 + 面板展开/折叠 + 设置展开/收起
         guiOpenAnim += (1f - guiOpenAnim) * ANIM_SPEED_FADE
