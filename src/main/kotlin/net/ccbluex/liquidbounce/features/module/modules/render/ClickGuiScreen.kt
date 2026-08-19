@@ -55,7 +55,7 @@ private val OVERLAY = 0xC0000000L.toInt()            // 全局半透明黑背景
 private val SETTING_BG = 0x40080810L.toInt()
 
     // ==================== Layout ====================
-    private val CORNER = 8f
+    private val CORNER = 6f
     private val ITEM_H = 17f
     private val SETTING_H = 17f
     private val SCROLL_W = 4f
@@ -64,7 +64,7 @@ private val SETTING_BG = 0x40080810L.toInt()
     private val PANEL_GAP = 0f
     private val PANEL_MIN_W = 130
     private val PANEL_MAX_H = 460
-    private val HEADER_H = 24f
+    private val HEADER_H = 22f
 
     // ==================== Slider Drag State ====================
     private data class SliderContext(
@@ -447,25 +447,24 @@ private val SETTING_BG = 0x40080810L.toInt()
             var panelModules: List<ClientModule>
             if (isSearching) {
                 panelModules = categories.flatMap { getCategoryModules(it) }.distinct()
-                drawText(ctx, font, "§lSearch Results", (px + 8f).toInt(), (py + 5f).toInt(), ACCENT)
+                drawText(ctx, font, "§lSearch Results", (px + 8f).toInt(), (py + 4f).toInt(), ACCENT)
             } else {
                 val category = panel.category ?: continue
                 panelModules = getCategoryModules(category)
-                val arrow = if (panel.collapsed) {
-                    "▶ "
-                } else {
-                    "▼ "
-                }
-                drawText(ctx, font, "§l$arrow${category.tag}", (px + 8f).toInt(), (py + 5f).toInt(), CATEGORY_TITLE)
+                // 【修改】分类名移到标题栏最左边, ▼▶ 改为 –+ 并移到最右边
+                drawText(ctx, font, "§l${category.tag}", (px + 8f).toInt(), (py + 4f).toInt(), CATEGORY_TITLE)
+                val arrow = if (panel.collapsed) "–" else "+"
+                val arrowX = (px + pw - 10f - font.width(arrow) * TEXT_SCALE).roundToInt()
+                drawText(ctx, font, "§l$arrow", arrowX, (py + 4f).toInt(), CATEGORY_TITLE)
                 val lineWidth = font.width(category.tag) + 10f
-                fillRect(ctx, px + 8f, py + 18f, px + 8f + lineWidth, py + 19f, ACCENT_DARK)
+                fillRect(ctx, px + 8f, py + HEADER_H - 2f, px + 8f + lineWidth, py + HEADER_H - 1f, ACCENT_DARK)
             }
 
             if (panel.collapsed) {
                 continue
             }
 
-            val headerH = 24f
+            val headerH = HEADER_H
             val listAreaX = px + PADDING
             val listAreaW = pw - PADDING * 2 - SCROLL_W
             val listAreaY = py + headerH + 4f
@@ -954,7 +953,7 @@ private val SETTING_BG = 0x40080810L.toInt()
 
         if (targetPanel != null) {
             val headerY = targetPanel.y
-            val headerH = 24f
+            val headerH = HEADER_H
             if (my in headerY.toInt()..(headerY + headerH).toInt()) {
                 if (btn == 1) {
                     targetPanel.collapsed = !targetPanel.collapsed
