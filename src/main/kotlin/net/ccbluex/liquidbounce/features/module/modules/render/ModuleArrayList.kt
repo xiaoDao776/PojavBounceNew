@@ -153,7 +153,7 @@ object ModuleArrayList : ClientModule("ArrayList[fix+skid]", ModuleCategories.RE
     private val shadowMode by enumChoice("Shadow Mode", ShadowMode.EDGE)   // 【新增】阴影目标: EDGE/TEXT/BOTH/PER_CHAR
     private val shadowRange by float("Shadow Range", 24f, 0f..30f)
     private val shadowOffsetX by float("Shadow Offset X", 0f, -20f..20f)
-    private val shadowOffsetY by float("Shadow Offset Y", 2.2f, -20f..20f)
+    private val shadowOffsetY by float("Shadow Offset Y", 0f, -20f..20f)
     private val shadowStrength by float("Shadow Strength", 0.1f, 0.01f..1f)
     private val shadowDensity by int("Shadow Density", 6, 0..10)
 

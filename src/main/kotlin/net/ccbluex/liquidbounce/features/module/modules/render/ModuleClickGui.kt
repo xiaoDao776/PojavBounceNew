@@ -1,10 +1,15 @@
 /*
- * ModuleClickGui —— 打开 ClickGuiScreen 的模块
+ * ModuleClickGui23 —— 打开 ClickGuiScreen 的模块
  *
  * 功能:
  *   - 快捷键(RightShift/ESC)打开/关闭 ClickGUI
  *   - 自定义 ClickGUI 颜色、不透明度、大小
  *   - 兼容所有现有 API
+ *
+ * 【本版修复】
+ *   - ESC 关闭 ClickGUI 时不再同步 setScreen(null), 改为延迟到下一 tick 关闭,
+ *     让本次 ESC 按键由 ClickGuiScreen 自身(shouldCloseOnEsc/keyPressed)消费,
+ *     避免 ESC 漏到游戏输入(keyPause)导致弹出暂停菜单。
  */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
@@ -78,11 +83,16 @@ object ModuleClickGui :
         if (event.action != 1) return@handler
         val code = event.keyCode
         // ESC 关闭: GLFW_KEY_ESCAPE = 256
-        // 【修复】ESC 仅用于关闭, 绝不开打; 只有当前屏幕是 ClickGuiScreen 时才响应
+        // 【修复】ESC 仅用于关闭, 绝不开打; 只有当前屏幕是 ClickGuiScreen 时才响应。
+        // 关键点: 不要在按键事件内同步 setScreen(null)——
+        // 本事件在 mixin 头部触发, 若同步关闭, 原版 KeyboardHandler 会按「无界面」分支
+        // 把本次 ESC 注册到 keyPause, 同帧弹出游戏暂停菜单。
+        // 改为延迟到下一 tick 关闭: 本次 ESC 由屏幕自身(keyPressed/shouldCloseOnEsc)
+        // 正常消费, 游戏侧完全收不到该按键, 暂停菜单不会出现。
         if (code == GLFW.GLFW_KEY_ESCAPE) {
             val currentScreen = mc.gui.screen()
             if (currentScreen is ClickGuiScreen) {
-                closeGui()
+                mc.execute { closeGui() }
             }
             // 无论屏幕是什么状态, ESC 分支到此为止, 不做任何打开操作
             return@handler
