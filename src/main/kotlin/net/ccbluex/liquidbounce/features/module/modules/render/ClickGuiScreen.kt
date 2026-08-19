@@ -31,28 +31,28 @@ import java.io.File
  */
 class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
-// ==================== Colors (青蓝主题, 匹配参考图) ====================
-private val ACCENT = 0xFF4DD0E1L.toInt()
-private val ACCENT_DARK = 0x664DD0E1L.toInt()
-private val BG = 0xE01A1A22L.toInt()
-private val PANEL_BG = 0xD81C1C24L.toInt()
+// ==================== Colors (暗黑主题, 匹配参考图: 近纯黑面板 + 白字 + 蓝色高亮) ====================
+private val ACCENT = 0xFF5599FFL.toInt()           // 亮蓝 (开启/激活)
+private val ACCENT_DARK = 0x665599FFL.toInt()
+private val BG = 0xF00E0E12L.toInt()               // 面板背景: 近纯黑微透明
+private val PANEL_BG = 0xEE0E0E12L.toInt()
 private val TEXT get() = ModuleClickGui.getTextColor()
-private val TEXT_BRIGHT = 0xFF4DD0E1L.toInt()
-private val TEXT_DIM get() = 0xFF000000L.toInt() or (ModuleClickGui.getTextColor() and 0x00FFFFFF)
-private val CATEGORY_TITLE = 0xFFFFFFFFL.toInt()
-private val TAB_BG = 0x8025252EL.toInt()
-private val TAB_ACTIVE = 0xFF33333DL.toInt()
-private val BORDER = 0x20FFFFFFL.toInt()
-private val HOVER = 0x15FFFFFFL.toInt()
-private val SCROLL_TRACK = 0x184DD0E1L.toInt()
-private val SCROLL_THUMB = 0x504DD0E1L.toInt()
-private val SCROLL_THUMB_HOVER = 0x784DD0E1L.toInt()
-private val EXPANDED_BG = 0x0A4DD0E1L.toInt()
-private val GROUP_BG = 0x0C4DD0E1L.toInt()
-private val GROUP_LINE = 0x144DD0E1L.toInt()
-private val SETTING_CHILD_BG = 0x06FFFFFFL.toInt()
-private val OVERLAY = 0x4D000000L.toInt()
-private val SETTING_BG = 0x50080810L.toInt()
+private val TEXT_BRIGHT = 0xFF5599FFL.toInt()       // 开启模块名亮蓝
+private val TEXT_DIM get() = 0xFFAAAAAAL.toInt()   // 关闭模块名浅灰
+private val CATEGORY_TITLE = 0xFFFFFFFFL.toInt()    // 分类标题纯白
+private val TAB_BG = 0x801A1A1EL.toInt()
+private val TAB_ACTIVE = 0xFF222228L.toInt()
+private val BORDER = 0x15FFFFFFL.toInt()
+private val HOVER = 0x12FFFFFFL.toInt()
+private val SCROLL_TRACK = 0x155599FFL.toInt()
+private val SCROLL_THUMB = 0x405599FFL.toInt()
+private val SCROLL_THUMB_HOVER = 0x605599FFL.toInt()
+private val EXPANDED_BG = 0x085599FFL.toInt()
+private val GROUP_BG = 0x0A5599FFL.toInt()
+private val GROUP_LINE = 0x105599FFL.toInt()
+private val SETTING_CHILD_BG = 0x04FFFFFFL.toInt()
+private val OVERLAY = 0xC0000000L.toInt()            // 全局半透明黑背景
+private val SETTING_BG = 0x40080810L.toInt()
 
     // ==================== Layout ====================
     private val CORNER = 8f
@@ -300,6 +300,11 @@ private val SETTING_BG = 0x50080810L.toInt()
     }
 
     override fun extractRenderState(ctx: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, delta: Float) {
+        // 【新增】全局半透明黑背景 (高性能: 单次 fillRect 覆盖全屏, 无额外开销)
+        val sc = minecraft!!.window.guiScaledWidth
+        val sh = minecraft!!.window.guiScaledHeight
+        ctx.fill(0, 0, sc, sh, OVERLAY)
+
         // 【丝滑动画】整体淡入 + 面板展开/折叠 + 设置展开/收起
         guiOpenAnim += (1f - guiOpenAnim) * ANIM_SPEED_FADE
         fadeAnim = guiOpenAnim
