@@ -1,40 +1,16 @@
 /*
  * ============================================================================
- *  ModuleTargetHud —— 移植 Solstice 的 TargetHUD.cpp/hpp (原生渲染)
- *
- *  适用: Rubbishy-Liquidbounce-Nextgen-for-Android (LiquidBounce Nextgen 0.39,
- *        Mojang 映射, Android SDK v30)
- *
- *  原版功能 (TargetHUD.cpp, Dear ImGui):
- *   1. 显示 KillAura 目标信息: 头像 + 名称 + 血条 + 吸收条
- *   2. 动画: 出现/消失缩放 (anim, dt*10) / 血量延迟 (mLerpedHealth, dt*10)
- *   3. 受伤动画: hurtTimeAnimPerc → 头像缩小 + 红色染色
- *   4. 血条: 水平渐变 (startColor→endColor, 主题色) + 金色吸收条覆盖
- *   5. 采样模式 (无目标时显示自己)
- *
- *  移植说明:
- *   - Aura::sTarget → KillAuraTargetTracker.target
- *   - D3D 皮肤纹理 → context.blit 皮肤纹理头部区域 (8..16/64 UV)
- *   - AddRectFilledMultiColor 水平渐变 → 8 段颜色插值近似
- *   - MathUtils::lerp → 帧率无关线性插值
- *   - getThemedColor → 粉蓝白三色循环插值
- *   - 受伤红染 (AddImage 乘色) → blit 后叠加半透明红 fill
- *
- *  可调节项 (20+): X/Y 偏移、UI 缩放、血量推算(占位)、无目标时显示自己、
- *        名称/血条/吸收条/背景开关、背景透明度、圆角、文字阴影、
- *        受伤闪红、出现动画速度、血量动画速度等。
- *
- *  渲染: 完全原生 —— OverlayRenderEvent + GuiGraphicsExtractor, 无 Web 依赖。
- *
- *  安装:
- *    1. 放入 src/main/kotlin/net/ccbluex/liquidbounce/features/module/modules/render/ModuleTargetHud.kt
- *    2. ModuleManager.kt: import + builtin 列表加 ModuleTargetHud,
+ *  ModuleSolsticeTargetHud —— Rise ModernTargetInfo 移植 (修正版)
+ *  - 字体对齐修复
+ *  - 去掉渐变条里多余的矩形块
+ *  - 可调背景色 / 边框
  * ============================================================================
  */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
 import net.ccbluex.liquidbounce.config.types.list.Tagged
 import net.ccbluex.liquidbounce.event.events.OverlayRenderEvent
+import net.ccbluex.liquidbounce.event.events.PlayerTickEvent
 import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.ClientModule
 import net.ccbluex.liquidbounce.features.module.ModuleCategories
@@ -42,70 +18,121 @@ import net.ccbluex.liquidbounce.features.module.modules.combat.killaura.KillAura
 import net.ccbluex.liquidbounce.render.drawQuad
 import net.ccbluex.liquidbounce.render.drawRoundedRect
 import net.ccbluex.liquidbounce.render.engine.type.Color4b
+import net.ccbluex.liquidbounce.render.withPush
 import net.ccbluex.liquidbounce.utils.client.mc
+import net.ccbluex.liquidbounce.utils.render.WorldToScreen
+import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.PlayerFaceRenderer
+import net.minecraft.client.gui.screens.ChatScreen
 import net.minecraft.client.player.AbstractClientPlayer
+import net.minecraft.client.resources.DefaultPlayerSkin
 import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.LivingEntity
-import net.minecraft.world.entity.monster.Creeper
-import net.minecraft.world.entity.monster.piglin.Piglin
-import net.minecraft.world.entity.monster.skeleton.Skeleton
-import net.minecraft.world.entity.monster.zombie.Zombie
+import java.text.DecimalFormat
+import kotlin.math.PI
+import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
-object ModuleTargetHud : ClientModule(
-    "TargetHUD",
+object ModuleSolsticeTargetHud : ClientModule(
+    "SolsticeTargetHud",
     ModuleCategories.RENDER,
-    aliases = listOf("TargetHud"),
+    aliases = listOf("RiseTargetInfo"),
 ) {
 
-    /* ============================= 枚举 ============================= */
+    private enum class BackgroundMode(override val tag: String) : Tagged {
+        GLASS("Glass"), TINT("Tint"), SOLID("Solid"), CUSTOM("Custom")
+    }
 
-    private enum class Style(override val tag: String) : Tagged { SOLSTICE("Solstice") }
+    // —— 布局 ——
+    private val targetInfoX by int("Position X", 40, 0..2000)
+    private val targetInfoY by int("Position Y", 40, 0..1200)
+    private val uiScale by float("UI Scale", 1f, 0.5f..2f)
+    private val fontSize by int("Font Size", 11, 8..20)
 
-    /* ============================= 可调节项 ============================= */
+    // —— 功能 ——
+    private val particles by boolean("Particles", true)
+    private val inWorld by boolean("In World", true)
+    private val multiTarget by boolean("Multi Target", false)
+    private val followPlayer by boolean("Follow Player", false)
 
-    private val style by enumChoice("Style", Style.SOLSTICE)
-    private val offsetX by int("Offset X", 0, -400..400)          // 原版默认 100 (中心偏移)
-    private val offsetY by int("Offset Y", 0, -400..400)
-    private val uiScale by float("UI Scale", 1f, 0.5f..2.5f)      // 原版 Font Size 20 → 9px 缩放
-    private val healthCalculation by boolean("Health Calculation", false)  // 原版血量推算 (保留开关)
-    private val sampleSelf by boolean("Sample Self", false)       // 无目标时显示自己 (原版 mSampleMode)
-    private val showName by boolean("Show Name", true)
-    private val showHealthBar by boolean("Show Health Bar", true)
-    private val showAbsorptionBar by boolean("Show Absorption Bar", true)
-    private val background by boolean("Background", true)
-    private val backgroundAlpha by int("Background Alpha", 128, 0..255)  // 原版 0.5
-    private val radius by int("Radius", 10, 0..20)
+    // —— 背景 / 边框 ——
+    private val backgroundMode by enumChoice("Background Mode", BackgroundMode.CUSTOM)
+    private val backgroundColor by color("Background Color", Color4b(18, 18, 24, 200))
+    private val backgroundColor2 by color("Background Color 2", Color4b(28, 28, 36, 200))
+    private val backgroundShade by color("Bar Shade", Color4b(40, 40, 48, 255))
+    private val radius by int("Radius", 8, 0..20)
+
+    private val border by boolean("Border", true)
+    private val borderColor by color("Border Color", Color4b(0, 0, 0, 160))
+    private val borderWidth by float("Border Width", 1.2f, 0.5f..4f)
+
+    // —— 文字 / 强调色 ——
+    private val textColor by color("Text Color", Color4b(255, 255, 255, 255))
+    private val accentColor by color("Accent Color", Color4b(0x6E, 0xC8, 0xF1, 255))
     private val textShadow by boolean("Text Shadow", true)
-    private val hurtFlash by boolean("Hurt Flash", true)          // 受伤红染 + 头像缩小
-
-    // —— 动画 ——
-    private val animationSpeed by float("Animation Speed", 50f, 1f..50f)     // 原版 dt*10
-    private val healthAnimSpeed by float("Health Anim Speed", 10f, 1f..30f)  // 原版 dt*10
 
     /* ============================= 内部状态 ============================= */
 
-    private var anim = 0f
-    private var lastFrameNs = 0L
-    private var lastTarget: LivingEntity? = null
-    private var lastHurtTime = 0f
-    private var hurtTime = 0f
-    private var hurtTimeAnimPerc = 0f
-    private var lerpedHealth = 0f
-    private var lerpedAbsorption = 0f
-    private var playerName = ""
+    private val EDGE = 8f
+    private val PAD = 6f
+    private val hpFormat = DecimalFormat("0.0")
 
-    // 原版主题色板 (粉蓝白)
+    private var destinationY = 4f
+    private val stackAnimation = Anim(::easeOutExpo, 1150)
+    private val openingAnimation = Anim(::easeOutElastic, 500)
+    private val healthAnimation = Anim(::easeOutQuint, 250)
+
+    private var panelHeight = 0f
+    private var lastSeenMs = 0L
+    private var lastTarget: LivingEntity? = null
+
+    private data class Particle(var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float)
+    private val particleList = mutableListOf<Particle>()
+
     private val themeColors = listOf(
         Color4b(0xE9, 0xA8, 0xBC),
         Color4b(0x6E, 0xC8, 0xF1),
         Color4b(255, 255, 255, 128),
     )
 
-    /* ============================= 工具 ============================= */
+    /* ============================= 动画 ============================= */
 
-    private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+    private class Anim(var easing: (Float) -> Float, var duration: Long) {
+        private var startTime = System.currentTimeMillis()
+        private var startValue = 0f
+        private var targetValue = 0f
+
+        fun run(target: Float) {
+            if (target == targetValue) return
+            startValue = getValue()
+            targetValue = target
+            startTime = System.currentTimeMillis()
+        }
+
+        fun getValue(): Float {
+            val progress = ((System.currentTimeMillis() - startTime).toFloat() / duration).coerceIn(0f, 1f)
+            return startValue + (targetValue - startValue) * easing(progress)
+        }
+    }
+
+    private fun easeOutExpo(x: Float): Float = if (x >= 1f) 1f else 1f - 2f.pow(-10f * x)
+    private fun easeInBack(x: Float): Float {
+        val c1 = 1.70158f
+        val c3 = c1 + 1f
+        return c3 * x * x * x - c1 * x * x
+    }
+    private fun easeOutElastic(x: Float): Float {
+        val c4 = (2 * PI) / 3
+        return when {
+            x == 0f -> 0f
+            x == 1f -> 1f
+            else -> (2f.pow(-10f * x) * sin((x * 10f - 0.75f) * c4) + 1f).toFloat()
+        }
+    }
+    private fun easeOutSine(x: Float): Float = sin(x * PI / 2).toFloat()
+    private fun easeOutQuint(x: Float): Float = 1f - (1f - x).pow(5)
 
     private fun themedColor(index: Float): Color4b {
         val time = 10000f / 3f
@@ -117,188 +144,405 @@ object ModuleTargetHud : ClientModule(
         return themeColors[seg].interpolateTo(themeColors[(seg + 1) % themeColors.size], t.toDouble())
     }
 
-    /** 水平渐变近似 (原版 AddRectFilledMultiColor, 8 段插值) */
-    private fun GuiGraphicsExtractor.drawHorizontalGradient(
-        x1: Float, y1: Float, x2: Float, y2: Float, c1: Color4b, c2: Color4b,
+    /* ============================= 绘制工具 ============================= */
+
+    /** 纯圆角背景，无内部矩形块 */
+    private fun GuiGraphicsExtractor.drawPanelBg(
+        x: Float, y: Float, w: Float, h: Float, r: Float, c1: Color4b, c2: Color4b,
     ) {
-        if (x2 - x1 <= 0.5f) {
-            drawQuad(x1, y1, x2, y2, c1)
-            return
-        }
-        val segments = 8
-        for (s in 0 until segments) {
-            val sx = x1 + (x2 - x1) * s / segments
-            val ex = x1 + (x2 - x1) * (s + 1) / segments
-            val c = c1.interpolateTo(c2, (s / (segments - 1).toFloat()).toDouble())
-            drawQuad(sx, y1, ex, y2, c)
+        if (w <= 0f || h <= 0f) return
+        val rad = r.coerceAtMost(w / 2f).coerceAtMost(h / 2f)
+        // 只用一层圆角底，避免渐变分段产生方块感
+        drawRoundedRect(x, y, x + w, y + h, rad, c1)
+        // 顶部轻微高光（很薄一条，仍圆角）
+        if (c1.argb != c2.argb) {
+            val topH = (h * 0.35f).coerceAtMost(14f)
+            drawRoundedRect(x, y, x + w, y + topH, rad, c2.alpha((c2.a * 0.45f).toInt().coerceIn(0, 255)))
         }
     }
 
-    /** 头部纹理: 玩家取皮肤, 常见怪物取原版贴图 (头部 UV 均为 8..16/64) */
-    private fun headTexture(entity: LivingEntity): Identifier? = when (entity) {
-        is AbstractClientPlayer -> entity.skin.body().texturePath()
-        is Skeleton -> Identifier.withDefaultNamespace("textures/entity/skeleton/skeleton.png")
-        is Zombie -> Identifier.withDefaultNamespace("textures/entity/zombie/zombie.png")
-        is Creeper -> Identifier.withDefaultNamespace("textures/entity/creeper/creeper.png")
-        is Piglin -> Identifier.withDefaultNamespace("textures/entity/piglin/piglin.png")
-        else -> null
+    /**
+     * 文字：先 translate 到像素对齐位置，再 scale。
+     * 避免 scale 后再用浮点坐标导致错位。
+     */
+    private fun GuiGraphicsExtractor.drawTextAligned(
+        font: Font, str: String, x: Float, y: Float,
+        color: Color4b, scale: Float, shadow: Boolean,
+    ) {
+        val ix = x.roundToInt().toFloat()
+        val iy = y.roundToInt().toFloat()
+        pose().withPush {
+            translate(ix, iy)
+            if (scale != 1f) scale(scale, scale)
+            text(font, str, 0, 0, color.argb, shadow)
+        }
     }
 
-    /* ============================= 目标解析 ============================= */
+    private fun textW(font: Font, text: String, scale: Float): Float = font.width(text) * scale
 
-    private fun resolveTarget(): LivingEntity? {
-        var target = KillAuraTargetTracker.target
-        if (target == null && sampleSelf) {
-            target = mc.player
+    /**
+     * 获取皮肤 Identifier。
+     * 玩家优先用 PlayerSkin.texture()（完整皮肤图），
+     * 其次 body().texturePath()，最后 DefaultPlayerSkin。
+     */
+    private fun resolveSkinId(entity: LivingEntity): Identifier {
+        if (entity is AbstractClientPlayer) {
+            val skin = entity.skin
+            // 1.21+ PlayerSkin.texture()
+            runCatching {
+                val m = skin.javaClass.methods.firstOrNull {
+                    it.name == "texture" && it.parameterCount == 0
+                }
+                val id = m?.invoke(skin) as? Identifier
+                if (id != null) return id
+            }
+            runCatching {
+                val body = skin.javaClass.methods.firstOrNull { it.name == "body" && it.parameterCount == 0 }
+                    ?.invoke(skin)
+                val path = body?.javaClass?.methods?.firstOrNull {
+                    it.name == "texturePath" && it.parameterCount == 0
+                }?.invoke(body) as? Identifier
+                if (path != null) return path
+            }
+            return DefaultPlayerSkin.get(entity.uuid).texture()
         }
-        if (target != null && target.isDeadOrDying) {
-            target = null
+        // 非玩家：按实体类型选默认贴图
+        val path = when (entity.type.toString()) {
+            "entity.minecraft.zombie", "entity.minecraft.zombie_villager" ->
+                "textures/entity/zombie/zombie.png"
+            "entity.minecraft.skeleton", "entity.minecraft.stray" ->
+                "textures/entity/skeleton/skeleton.png"
+            "entity.minecraft.creeper" ->
+                "textures/entity/creeper/creeper.png"
+            "entity.minecraft.piglin", "entity.minecraft.zombified_piglin" ->
+                "textures/entity/piglin/piglin.png"
+            "entity.minecraft.enderman" ->
+                "textures/entity/enderman/enderman.png"
+            else -> "textures/entity/player/wide/steve.png"
         }
-        return target
+        return Identifier.withDefaultNamespace(path)
     }
 
-    /* =============================== 渲染 =============================== */
+    /**
+     * 绘制头部正面（含帽子层）。
+     * 使用像素 UV：头 8,8 尺寸 8x8；帽 40,8 尺寸 8x8；纹理 64x64。
+     * （之前用 8/64 归一化坐标会导致采样错误 → 发白）
+     */
+    private fun GuiGraphicsExtractor.drawEntityHead(
+        entity: LivingEntity,
+        x: Float,
+        y: Float,
+        size: Float,
+    ) {
+        val ix = x.roundToInt()
+        val iy = y.roundToInt()
+        val s = size.roundToInt().coerceAtLeast(4)
 
-    @Suppress("unused")
-    private val renderHandler = handler<OverlayRenderEvent> { event ->
-        val context = event.context
+        if (entity is AbstractClientPlayer) {
+            // 官方 PlayerFaceRenderer：自动画头 + 帽子
+            runCatching {
+                PlayerFaceRenderer.draw(this, entity.skin, ix, iy, s)
+                return
+            }
+            runCatching {
+                PlayerFaceRenderer.draw(this, resolveSkinId(entity), ix, iy, s)
+                return
+            }
+        }
+
+        val tex = resolveSkinId(entity)
+        // 兼容多种 blit 签名：像素 UV (u,v,regionW,regionH,texW,texH)
+        val drawn = runCatching {
+            // 形式 A: blit(id, x, y, w, h, u, v, regionW, regionH, texW, texH)
+            val m = this.javaClass.methods.firstOrNull { method ->
+                method.name == "blit" && method.parameterCount >= 10
+            }
+            if (m != null) {
+                // 头
+                m.invoke(this, tex, ix, iy, s, s, 8f, 8f, 8, 8, 64, 64)
+                // 帽（半透明由管线处理；失败忽略）
+                runCatching { m.invoke(this, tex, ix, iy, s, s, 40f, 8f, 8, 8, 64, 64) }
+                true
+            } else false
+        }.getOrDefault(false)
+
+        if (!drawn) {
+            // 形式 B: 现有 Solstice 用的 (id, x1,y1,x2,y2, u0,v0,u1,v1) —— 改用正确归一化 UV
+            runCatching {
+                val m = this.javaClass.methods.firstOrNull { method ->
+                    method.name == "blit" && method.parameterCount == 9
+                } ?: return@runCatching
+                // 头: u0=8/64, v0=8/64, u1=16/64, v1=16/64
+                m.invoke(
+                    this, tex,
+                    ix, iy, ix + s, iy + s,
+                    8f / 64f, 8f / 64f, 16f / 64f, 16f / 64f,
+                )
+                runCatching {
+                    m.invoke(
+                        this, tex,
+                        ix, iy, ix + s, iy + s,
+                        40f / 64f, 8f / 64f, 48f / 64f, 16f / 64f,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun GuiGraphicsExtractor.drawDropShadow(x: Float, y: Float, size: Float, rad: Float) {
+        for (i in 1..3) {
+            val spread = i * 1.8f
+            val a = (16 * (1 - i / 3.5f)).roundToInt().coerceAtLeast(0)
+            drawRoundedRect(
+                x - spread, y - spread, x + size + spread, y + size + spread,
+                rad + spread * 0.4f, Color4b(0, 0, 0, a),
+            )
+        }
+    }
+
+    /* ============================= 粒子 ============================= */
+
+    private fun spawnParticles(centerX: Float, centerY: Float, hurtTime: Float) {
+        val count = (hurtTime * Math.random() / 2).toInt()
+        repeat(count) {
+            particleList += Particle(
+                centerX, centerY,
+                ((Math.random() - 0.5) * 1.7f).toFloat(),
+                ((Math.random() - 0.5) * 1.7f).toFloat(),
+                1f,
+            )
+        }
+        while (particleList.size > 200) particleList.removeAt(0)
+    }
+
+    private fun GuiGraphicsExtractor.renderParticles() {
+        val it = particleList.iterator()
+        while (it.hasNext()) {
+            val p = it.next()
+            p.x += p.vx; p.y += p.vy
+            p.vx *= 0.95f; p.vy *= 0.95f
+            p.life -= 0.04f
+            if (p.life <= 0f) { it.remove(); continue }
+            drawQuad(
+                p.x, p.y, p.x + 2f, p.y + 2f,
+                Color4b(255, 255, 255, (p.life * 255).roundToInt().coerceIn(0, 255)),
+            )
+        }
+    }
+
+    /* =============================== 主渲染 =============================== */
+
+    private fun GuiGraphicsExtractor.render(
+        x: Float, y: Float, target: LivingEntity, s: Float, tickDelta: Float,
+    ) {
+        val ctx = this
+        val now = System.currentTimeMillis()
+        val out = !inWorld || now - lastSeenMs > 1000L
+        openingAnimation.easing = if (out) ::easeInBack else ::easeOutElastic
+        openingAnimation.duration = if (out) 400 else 850
+        openingAnimation.run(if (out) 0f else 1f)
+
+        val scale = openingAnimation.getValue()
+        if (scale <= 0.01f) return
+
+        val name = target.displayName?.string ?: target.name.string
         val font = mc.font
+        // mc.font 默认约 9px，统一缩放
+        val ts = (fontSize / 9f) * s
 
-        val now = mc.getFrameTimeNs()
-        val frameTime = if (lastFrameNs != 0L) {
-            ((now - lastFrameNs) / 1e9f).coerceIn(0f, 0.05f)
-        } else {
-            0.016f
-        }
-        lastFrameNs = now
+        val health = (if (!inWorld) 0f else target.health).coerceAtMost(target.maxHealth)
+        val healthText = hpFormat.format(health.toDouble())
+        val nameW = textW(font, name, ts)
+        val hpTextW = textW(font, healthText, ts)
+        val healthBarW = maxOf(nameW + 28f * s - hpTextW, 70f * s)
 
-        val target = resolveTarget()
-        val showing = target != null
+        healthAnimation.easing = ::easeOutQuint
+        healthAnimation.duration = 250
+        healthAnimation.run((health / target.maxHealth.coerceAtLeast(0.01f)) * healthBarW)
+        val healthFill = healthAnimation.getValue()
 
-        // 出现/消失动画 (原版: anim = lerp(anim, showing?1:0, dt*10))
-        anim += ((if (showing) 1f else 0f) - anim) * (frameTime * animationSpeed).coerceAtMost(1f)
-        if (anim < 0.01f) return@handler
-        if (target == null) return@handler
+        val hurtTime = (if (target.hurtTime == 0) 0f else target.hurtTime - tickDelta) * 0.5f
+        val face = 28f * s
+        val faceOff = hurtTime / 2f
+        val panelW = EDGE + face + PAD + healthBarW + PAD + hpTextW + EDGE
+        val panelH = face + EDGE * 2
+        panelHeight = panelH
 
-        // 目标切换时立即重置动画值 (原版 mLastTarget != target)
-        if (lastTarget !== target) {
-            lastTarget = target
-            lerpedHealth = target.health
-            lerpedAbsorption = target.absorptionAmount
-            hurtTimeAnimPerc = 0f
-            lastHurtTime = 0f
-            playerName = target.displayName?.string ?: target.name.string
-        }
-
-        // 受伤动画 (原版: lerpedHurtTime + hurtTimeAnimPerc lerp dt*20)
-        hurtTime = target.hurtTime.toFloat()
-        if (hurtTime > lastHurtTime) {
-            lastHurtTime = hurtTime
-        }
-        val lerpedHurtTime = lerp(lastHurtTime / 10f, hurtTime / 10f, frameTime)
-        hurtTimeAnimPerc += (lerpedHurtTime - hurtTimeAnimPerc) * (frameTime * 20f).coerceAtMost(1f)
-
-        // 血量延迟动画 (原版: lerp dt*10)
-        lerpedHealth += (target.health - lerpedHealth) * (frameTime * healthAnimSpeed).coerceAtMost(1f)
-        lerpedAbsorption += (target.absorptionAmount - lerpedAbsorption) * (frameTime * healthAnimSpeed).coerceAtMost(1f)
-
-        val s = uiScale
-        val alphaAnim = anim
-
-        // 盒子尺寸与位置 (屏幕中心 + 偏移, 原版 230x70 → 适配 9px 为 150x40)
-        val boxW = 150f * s * anim
-        val boxH = 40f * s * anim
-        val boxX = context.guiWidth() / 2f - boxW / 2f + offsetX
-        val boxY = context.guiHeight() / 2f - boxH / 2f + offsetY
-
-        // 背景 (原版 黑色 0.5 圆角 15*anim)
-        if (background) {
-            context.drawRoundedRect(
-                boxX, boxY, boxX + boxW, boxY + boxH,
-                radius * s * anim,
-                Color4b(0, 0, 0, (0.5f * 255 * alphaAnim).roundToInt().coerceIn(0, 255)),
-            )
+        // —— 背景色 ——
+        var bg1 = backgroundColor
+        var bg2 = backgroundColor2
+        var accent = accentColor
+        when (backgroundMode) {
+            BackgroundMode.GLASS -> {
+                bg1 = Color4b(0, 0, 0, 100)
+                bg2 = Color4b(0, 0, 0, 80)
+            }
+            BackgroundMode.TINT -> {
+                val t1 = themedColor((x + y) / 10f)
+                val t2 = themedColor((x + y + panelH) / 10f)
+                bg1 = Color4b(t1.r / 5, t1.g / 5, t1.b / 5, 140)
+                bg2 = Color4b(t2.r / 5, t2.g / 5, t2.b / 5, 140)
+                accent = t1
+            }
+            BackgroundMode.SOLID -> {
+                val t = themedColor(0f)
+                bg1 = t.alpha(150)
+                bg2 = themedColor(40f).alpha(150)
+                accent = Color4b(255, 255, 255)
+            }
+            BackgroundMode.CUSTOM -> {
+                bg1 = backgroundColor
+                bg2 = backgroundColor2
+            }
         }
 
-        // 头像 (原版 60*anim, 受伤缩小到 40*anim + 红染)
-        val headSize = 28f * s * anim
-        val headShrink = lerp(headSize, 18f * s * anim, hurtTimeAnimPerc)
-        val headX = boxX + 5f * s * anim + (headSize - headShrink) / 2f
-        val headY = boxY + 5f * s * anim + (headSize - headShrink) / 2f
+        // 以面板中心缩放
+        val cx = x + panelW / 2f
+        val cy = y + panelH / 2f
 
-        val texture = headTexture(target)
-        if (texture != null) {
-            // 头部 UV: 64x64 皮肤纹理的 8..16 区域
-            context.blit(
-                texture,
-                headX.roundToInt(), headY.roundToInt(),
-                (headX + headShrink).roundToInt(), (headY + headShrink).roundToInt(),
-                8f / 64f, 16f / 64f, 8f / 64f, 16f / 64f,
-            )
-            // 受伤红染 (原版 imageColor 乘色近似)
-            if (hurtFlash && hurtTimeAnimPerc > 0.01f) {
-                val a = (150 * hurtTimeAnimPerc * alphaAnim).roundToInt().coerceIn(0, 255)
+        pose().withPush {
+            translate(cx, cy)
+            scale(scale, scale)
+            translate(-cx, -cy)
+
+            val rr = radius * s * 1.1f
+
+            // 背景（无分段方块）
+            ctx.drawPanelBg(x, y, panelW, panelH, rr, bg1, bg2)
+
+            // 边框
+            if (border) {
+                ctx.drawRoundedRect(
+                    x, y, x + panelW, y + panelH, rr,
+                    Color4b.TRANSPARENT, borderColor, borderWidth,
+                )
+            }
+
+            // 受伤红底
+            val headX = x + EDGE + faceOff
+            val headY = y + EDGE + faceOff
+            val headSize = (face - hurtTime).coerceAtLeast(4f)
+            if (hurtTime > 0f) {
+                ctx.drawRoundedRect(
+                    headX, headY, headX + headSize, headY + headSize,
+                    radius * s * 0.6f,
+                    Color4b(255, 0, 0, (hurtTime / 9 * 200).roundToInt().coerceIn(0, 200)),
+                )
+            }
+
+            // 头像阴影 + 皮肤正面（含帽子）
+            ctx.drawDropShadow(headX, headY, headSize, radius * s * 0.5f)
+            ctx.drawEntityHead(target, headX, headY, headSize)
+            if (hurtTime > 0f) {
+                val a = (hurtTime / 9 * 120).roundToInt().coerceIn(0, 120)
                 if (a > 0) {
-                    context.fill(
+                    ctx.fill(
                         headX.roundToInt(), headY.roundToInt(),
-                        (headX + headShrink).roundToInt(), (headY + headShrink).roundToInt(),
+                        (headX + headSize).roundToInt(), (headY + headSize).roundToInt(),
                         (a shl 24) or 0x00FF0000,
                     )
                 }
             }
-        }
 
-        // 血条位置 (原版: 底部, 从头像右侧开始)
-        val healthStartX = boxX + headSize + 10f * s * anim
-        val healthStartY = boxY + boxH - 13f * s * anim
-        val healthBarEndX = boxX + boxW - 5f * s * anim
-        val barW = (healthBarEndX - healthStartX).coerceAtLeast(1f)
-        val barH = 8f * s * anim
-
-        // 名称 (原版: 血条上方居中, 白字阴影)
-        if (showName && playerName.isNotEmpty()) {
-            val ydiff = healthStartY - boxY
-            val nameY = boxY + ydiff / 2f - 4f * s + 5f * s * anim
-            context.text(
-                font, playerName,
-                (healthStartX).roundToInt(), nameY.roundToInt(),
-                Color4b(255, 255, 255, (255 * alphaAnim).roundToInt()).argb, textShadow,
-            )
-        }
-
-        // 血条
-        if (showHealthBar) {
-            // 背景 (原版 100,100,100,170)
-            context.drawRoundedRect(
-                healthStartX, healthStartY, healthBarEndX, healthStartY + barH, 5f,
-                Color4b(100, 100, 100, (0.67f * 255 * alphaAnim).roundToInt().coerceIn(0, 255)),
+            // 名称
+            val textX = x + EDGE + face + PAD
+            val nameY = y + EDGE + 2f * s
+            ctx.drawTextAligned(font, "Name:", textX, nameY, textColor.alpha(200), ts * 0.9f, textShadow)
+            val labelW = textW(font, "Name:", ts * 0.9f)
+            ctx.drawTextAligned(
+                font, name,
+                textX + labelW + 3f * s, nameY,
+                accent.alpha(255), ts, textShadow,
             )
 
-            val healthPerc = (lerpedHealth / target.maxHealth).coerceIn(0f, 1f)
-            val healthEndX = lerp(healthStartX, healthBarEndX, healthPerc)
-
-            // 血条: 水平渐变 (原版 startColor=themed(0) → endColor=themed(endXDiff*2))
-            if (healthPerc > 0.01f) {
-                val startColor = themedColor(0f).alpha((255 * alphaAnim).roundToInt().coerceIn(0, 255))
-                val endColor = themedColor((healthBarEndX - healthStartX) * 2f)
-                    .alpha((255 * alphaAnim).roundToInt().coerceIn(0, 255))
-                context.drawHorizontalGradient(
-                    healthStartX, healthStartY, healthEndX, healthStartY + barH,
-                    startColor, endColor,
+            // 血条
+            val barX = textX
+            val barH = 5f * s
+            val barY = y + EDGE + face - barH - 2f * s
+            ctx.drawRoundedRect(barX, barY, barX + healthBarW, barY + barH, 2.5f * s, backgroundShade)
+            if (healthFill > 0.5f) {
+                ctx.drawRoundedRect(
+                    barX, barY, barX + healthFill, barY + barH, 2.5f * s,
+                    accent.alpha(255),
                 )
             }
 
-            // 吸收条 (原版 金色 244,204,0 覆盖在血条上)
-            if (showAbsorptionBar) {
-                val absPerc = (lerpedAbsorption / 20f).coerceIn(0f, 1f)
-                if (absPerc > 0.01f) {
-                    val absEndX = lerp(healthStartX, healthBarEndX, absPerc)
-                    context.drawRoundedRect(
-                        healthStartX, healthStartY, absEndX, healthStartY + barH, 5f,
-                        Color4b(244, 204, 0, (255 * alphaAnim).roundToInt().coerceIn(0, 255)),
-                    )
-                }
-            }
+            // 血量数字（与血条垂直居中对齐）
+            val hpY = barY + (barH - 9f * ts) / 2f
+            ctx.drawTextAligned(
+                font, healthText,
+                barX + healthBarW + 4f * s, hpY,
+                accent.alpha(255), ts, textShadow,
+            )
         }
+
+        renderParticles()
+    }
+
+    @Suppress("unused")
+    private val renderHandler = handler<OverlayRenderEvent> { event ->
+        val context = event.context
+        val tickDelta = event.tickDelta
+        val s = uiScale
+        val now = System.currentTimeMillis()
+
+        var x = targetInfoX.toFloat()
+        var y = targetInfoY.toFloat()
+
+        if (mc.gui.screen() is ChatScreen) {
+            context.render(x, y, mc.player ?: return@handler, s, tickDelta)
+            return@handler
+        }
+
+        val target = KillAuraTargetTracker.target
+        if (target == null) {
+            if (now - lastSeenMs > 1400L) return@handler
+            val fading = lastTarget ?: return@handler
+            context.render(x, y, fading, s, tickDelta)
+            return@handler
+        }
+        lastTarget = target
+        lastSeenMs = now
+
+        if (multiTarget) {
+            val targets = KillAuraTargetTracker.targets()
+            if (targets.isEmpty()) return@handler
+            var count = 0
+            for (i in targets.indices) {
+                if (count > 2) break
+                val t = targets[i]
+                val rect = WorldToScreen.calculateScreenRect(t.boundingBox)
+                if (followPlayer && rect == null) continue
+                destinationY = if (i <= 0) 0f else 60f
+                if (followPlayer && rect != null) {
+                    x = rect.x2
+                    y = rect.y2 - (rect.y2 - rect.y1) / 2f - panelHeight / 2f
+                }
+                context.render(x, y, t, s, tickDelta)
+                if (!followPlayer) {
+                    y += stackAnimation.let {
+                        it.easing = ::easeOutExpo
+                        it.duration = 1150
+                        it.run(destinationY)
+                        it.getValue()
+                    }
+                }
+                count++
+            }
+        } else {
+            context.render(x, y, target, s, tickDelta)
+        }
+    }
+
+    @Suppress("unused")
+    private val tickHandler = handler<PlayerTickEvent> { _ ->
+        if (!particles) return@handler
+        val target: LivingEntity? = if (mc.gui.screen() is ChatScreen) {
+            mc.player
+        } else {
+            KillAuraTargetTracker.target
+        }
+        if (target == null || target.hurtTime <= 0) return@handler
+        spawnParticles(targetInfoX + 20f, targetInfoY + 20f, target.hurtTime * 0.5f)
     }
 }

@@ -49,7 +49,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
-object ModuleWatermark : ClientModule("Watermark", ModuleCategories.RENDER, aliases = listOf("WaterMark")) {
+object ModuleWatermark : ClientModule("Island", ModuleCategories.RENDER, aliases = listOf("WaterMark")) {
 
     /* ============================= 可调节项 ============================= */
 
