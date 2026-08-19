@@ -34,7 +34,7 @@ object ModuleSolsticeWatermark : ClientModule(
     private val dropShadow by boolean("Drop Shadow", true)
     private val bold by boolean("Bold", false)
 
-    private val fontScale by float("Font Scale", 1.8f, 1f..4f)
+    private val fontScale by float("Font Scale", 1.4f, 1f..4f)
     private val posX by float("Pos X", 12f, 0f..800f)
     private val posY by float("Pos Y", 10f, 0f..600f)
     private val shadowOffset by float("Shadow Offset", 0.0f, 0f..6f)

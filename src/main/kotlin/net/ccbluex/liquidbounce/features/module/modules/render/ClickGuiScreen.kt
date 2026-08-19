@@ -461,7 +461,7 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
                 val arrowX = (px + pw - 10f - font.width(arrow) * TEXT_SCALE).roundToInt()
                 drawText(ctx, font, "§l$arrow", arrowX, (py + 4f).toInt(), CATEGORY_TITLE)
                 // 【修改】底部蓝紫细条: 通宽面板, 1px 细线
-                fillRect(ctx, px, py + HEADER_H - 1f, px + pw, py + HEADER_H, ACCENT_DARK)
+                fillRect(ctx, px, py + HEADER_H - 1f, px + pw, py + HEADER_H, ACCENT)
             }
 
             if (panel.collapsed) {
@@ -751,21 +751,22 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
             actual is Boolean -> {
                 val nameMaxW = (toggleX - labelX - 28).coerceAtLeast(10)   // 留出开关空间
                 drawText(ctx, font, trimText(font, v.name, nameMaxW), labelX, (y + 4f).toInt(), TEXT_DIM)
-                // 【修改】圆润药丸开关: 圆点改为正圆形 (drawRoundedRect r=3.5)
-                val tw = 20f
-                val th = 10f
+                // 【修改】ON/OFF 改为圆药丸开关 (仿图: 更圆的药丸形, 颜色不变)
+                val tw = 22f
+                val th = 12f
                 val tx = toggleX.toFloat()
-                val ty = y.toInt() + 3f
+                val ty = y.toInt() + 2f
+                val tr = th / 2f   // 半径=高度/2 → 完全圆形药丸
                 if (actual) {
-                    // 开启状态: 蓝紫填充圆角药丸
-                    drawRoundedRect(ctx, tx, ty, tw, th, th / 2f, TOGGLE_ON)
-                    // 右侧白色正圆点
-                    drawRoundedRect(ctx, tx + tw - 8.5f, ty + 1.5f, 7f, 7f, 3.5f, 0xFFFFFFFF.toInt())
+                    // 开启状态: 蓝紫填充圆形药丸
+                    drawRoundedRect(ctx, tx, ty, tw, th, tr, TOGGLE_ON)
+                    // 右侧白色圆点
+                    fillRect(ctx, tx + tw - 8f, ty + 2f, tx + tw - 3f, ty + th - 2f, 0xFFFFFFFF.toInt())
                 } else {
-                    // 关闭状态: 灰色边框圆角药丸
-                    drawRoundedRect(ctx, tx, ty, tw, th, th / 2f, TOGGLE_OFF_BORDER)
-                    // 左侧灰色正圆点
-                    drawRoundedRect(ctx, tx + 1.5f, ty + 1.5f, 7f, 7f, 3.5f, 0x80FFFFFF.toInt())
+                    // 关闭状态: 灰色边框圆形药丸
+                    drawRoundedRect(ctx, tx, ty, tw, th, tr, TOGGLE_OFF_BORDER)
+                    // 左侧灰色圆点
+                    fillRect(ctx, tx + 3f, ty + 2f, tx + 8f, ty + th - 2f, 0x70FFFFFF.toInt())
                 }
             }
             isBindValue(v) -> {
@@ -791,19 +792,16 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
                     val lx = layout.lowerPointX
                     val ux = layout.upperPointX.coerceAtLeast(lx + 2)
                     fillRect(ctx, lx, sliderY, ux, sliderY + 1, ACCENT)
-                    // 【修改】范围双滑块: 两个点改为对称正圆, 圆心对齐滑轨中心
-                    drawRoundedRect(ctx, lx - 2.5f, sliderY - 2f, 5f, 5f, 2.5f, TEXT_BRIGHT)
-                    drawRoundedRect(ctx, ux - 2.5f, sliderY - 2f, 5f, 5f, 2.5f, TEXT_BRIGHT)
+                    fillRect(ctx, lx - 3, sliderY - 3, lx + 3, sliderY + 3, TEXT_BRIGHT)
+                    fillRect(ctx, ux - 3, sliderY - 3, ux + 3, sliderY + 3, TEXT_BRIGHT)
                 } else {
                     val progress = if (layout.maxV > layout.minV) {
                         ((layout.fv - layout.minV) / (layout.maxV - layout.minV)).coerceIn(0f, 1f)
                     } else {
                         0f
                     }
-                    val filledX = layout.sliderX + (layout.sliderW * progress).toInt()
-                    fillRect(ctx, layout.sliderX, sliderY, filledX, sliderY + 1, ACCENT)
-                    // 【修改】普通滑块: 拉点改为对称正圆, 圆心对齐滑轨中心
-                    drawRoundedRect(ctx, filledX - 2.5f, sliderY - 2f, 5f, 5f, 2.5f, TEXT_BRIGHT)
+                    fillRect(ctx, layout.sliderX, sliderY, layout.sliderX + (layout.sliderW * progress).toInt(), sliderY + 1, ACCENT)
+                    fillRect(ctx, layout.sliderX + (layout.sliderW * progress).toInt() - 3, sliderY - 3, layout.sliderX + (layout.sliderW * progress).toInt() + 3, sliderY + 3, TEXT_BRIGHT)
                 }
                 drawText(ctx, font, layout.valText, layout.valX, (y + 3f).toInt(), TEXT_DIM)
             }
@@ -918,11 +916,12 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
         val sc = minecraft!!.window.guiScaledWidth
         val sh = minecraft!!.window.guiScaledHeight
 
-        // 【修复】搜索框已移到顶部中央, 点击检测同步为顶部位置
-        val searchY = 6f
-        val searchX = (sc - 180f) / 2f
-        val searchW = 180f
-        if (mx in searchX.toInt()..(searchX + searchW).toInt() && my in searchY.toInt()..(searchY + 18f).toInt()) {
+        // 【修复】搜索框点击判定匹配新位置 (顶部居中, 180x18 圆角黑底)
+        val sSearchW = 180f
+        val sSearchH = 18f
+        val sSearchX = (sc - sSearchW) / 2f
+        val sSearchY = 6f
+        if (mx in sSearchX.toInt()..(sSearchX + sSearchW).toInt() && my in sSearchY.toInt()..(sSearchY + sSearchH).toInt()) {
             searchFocused = true
             return true
         }
