@@ -23,6 +23,7 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.sqrt
 import java.io.File
 
 /**
@@ -232,6 +233,16 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
             val maxY = cy.coerceAtLeast(py1).coerceAtLeast(py2).toInt()
             fillRect(ctx, minX, minY, max(minX + 1, maxX), max(minY + 1, maxY), color)
             a += 6f
+        }
+    }
+
+    /** 真正圆形: 逐像素判定 x²+y²≤r², 按行填充 */
+    private fun drawCircle(ctx: GuiGraphicsExtractor, cx: Float, cy: Float, r: Float, color: Int) {
+        val ri = r.toInt()
+        for (dy in -ri..ri) {
+            val halfW = sqrt(r * r - dy * dy).toInt()
+            val yy = (cy + dy).toInt()
+            fillRect(ctx, (cx - halfW).toInt(), yy, (cx + halfW).toInt(), yy + 1, color)
         }
     }
 
@@ -751,7 +762,7 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
             actual is Boolean -> {
                 val nameMaxW = (toggleX - labelX - 28).coerceAtLeast(10)   // 留出开关空间
                 drawText(ctx, font, trimText(font, v.name, nameMaxW), labelX, (y + 4f).toInt(), TEXT_DIM)
-                // 【修改】仿图药丸开关: 圆点改为正圆, 颜色不变
+                // 【修改】仿图药丸开关: ON=蓝色药丸+右白圆, OFF=只有白色圆
                 val tw = 22f
                 val th = 12f
                 val tx = toggleX.toFloat()
@@ -760,13 +771,11 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
                 if (actual) {
                     // 开启状态: 蓝紫填充圆形药丸
                     drawRoundedRect(ctx, tx, ty, tw, th, tr, TOGGLE_ON)
-                    // 右侧白色正圆钮 (8×8)
-                    drawRoundedRect(ctx, tx + tw - 10f, ty + 2f, 8f, 8f, 4f, 0xFFFFFFFF.toInt())
+                    // 右侧白色正圆钮 (真圆)
+                    drawCircle(ctx, tx + tw - 6f, ty + 6f, 4f, 0xFFFFFFFF.toInt())
                 } else {
-                    // 关闭状态: 灰色边框圆形药丸
-                    drawRoundedRect(ctx, tx, ty, tw, th, tr, TOGGLE_OFF_BORDER)
-                    // 左侧正圆钮 (8×8)
-                    drawRoundedRect(ctx, tx + 2f, ty + 2f, 8f, 8f, 4f, 0x70FFFFFF.toInt())
+                    // 关闭状态: 无药丸底, 只有左侧白色正圆
+                    drawCircle(ctx, tx + 6f, ty + 6f, 4f, 0xFFFFFFFF.toInt())
                 }
             }
             isBindValue(v) -> {
