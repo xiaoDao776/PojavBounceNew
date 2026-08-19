@@ -732,7 +732,7 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
         val actual = getActualValue(v)
         val isGroup = isGroupValue(v)
         val labelX = (x + 6 + indent).toInt()
-        val toggleX = (x + w - 16).toInt()
+        val toggleX = (x + w - 26).toInt()
         val valueX = (x + w - 44).toInt()
         val labelMaxW = (valueX - labelX - 4).coerceAtLeast(10)
 
@@ -751,7 +751,7 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
             actual is Boolean -> {
                 val nameMaxW = (toggleX - labelX - 28).coerceAtLeast(10)   // 留出开关空间
                 drawText(ctx, font, trimText(font, v.name, nameMaxW), labelX, (y + 4f).toInt(), TEXT_DIM)
-                // 【修改】ON/OFF 改为圆药丸开关 (仿图: 更圆的药丸形, 颜色不变)
+                // 【修改】仿图药丸开关: 圆点改为正圆, 颜色不变
                 val tw = 22f
                 val th = 12f
                 val tx = toggleX.toFloat()
@@ -760,13 +760,13 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
                 if (actual) {
                     // 开启状态: 蓝紫填充圆形药丸
                     drawRoundedRect(ctx, tx, ty, tw, th, tr, TOGGLE_ON)
-                    // 右侧白色圆点
-                    fillRect(ctx, tx + tw - 8f, ty + 2f, tx + tw - 3f, ty + th - 2f, 0xFFFFFFFF.toInt())
+                    // 右侧白色正圆钮 (8×8)
+                    drawRoundedRect(ctx, tx + tw - 10f, ty + 2f, 8f, 8f, 4f, 0xFFFFFFFF.toInt())
                 } else {
                     // 关闭状态: 灰色边框圆形药丸
                     drawRoundedRect(ctx, tx, ty, tw, th, tr, TOGGLE_OFF_BORDER)
-                    // 左侧灰色圆点
-                    fillRect(ctx, tx + 3f, ty + 2f, tx + 8f, ty + th - 2f, 0x70FFFFFF.toInt())
+                    // 左侧正圆钮 (8×8)
+                    drawRoundedRect(ctx, tx + 2f, ty + 2f, 8f, 8f, 4f, 0x70FFFFFF.toInt())
                 }
             }
             isBindValue(v) -> {
