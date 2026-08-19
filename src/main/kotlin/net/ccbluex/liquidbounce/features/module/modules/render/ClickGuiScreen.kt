@@ -754,7 +754,7 @@ private val SEARCH_BG = 0xE0101012L.toInt()         // 搜索框黑色背景
                 // 【修改】ON/OFF 文字改为圆角药丸开关 (仿图: 开启=蓝紫填充, 关闭=灰色边框)
                 val tw = 20f
                 val th = 10f
-                val tx = toggleX
+                val tx = toggleX.toFloat()
                 val ty = y.toInt() + 3f
                 if (actual) {
                     // 开启状态: 蓝紫填充圆角矩形
