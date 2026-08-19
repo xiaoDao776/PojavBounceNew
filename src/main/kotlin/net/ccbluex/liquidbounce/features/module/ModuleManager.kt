@@ -215,6 +215,7 @@ import net.ccbluex.liquidbounce.features.module.modules.render.ModuleMobOwners
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNewChunks
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNoBob
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNoFov
+import net.ccbluex.liquidbounce.features.module.modules.render.ModuleRiseClickgui
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNoHurtCam
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleNoSwing
 import net.ccbluex.liquidbounce.features.module.modules.render.ModuleParticles
@@ -648,6 +649,7 @@ object ModuleManager : EventListener, Collection<ClientModule> by modules {
             ModuleFreeCam,
             ModuleSmoothCamera,
             ModuleFreeLook,
+            ModuleRiseClickgui,
             ModuleFullBright,
             ModuleHoleESP,
             ModuleHud,
