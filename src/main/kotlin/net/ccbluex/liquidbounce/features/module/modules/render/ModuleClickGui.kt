@@ -14,7 +14,7 @@ import net.ccbluex.liquidbounce.event.events.KeyboardKeyEvent
 import net.ccbluex.liquidbounce.event.handler
 import org.lwjgl.glfw.GLFW
 
-object ModuleClickGui17 :
+object ModuleClickGui :
     ClientModule(
         "ClickGUI",
         ModuleCategories.RENDER,
