@@ -14,7 +14,7 @@ import net.ccbluex.liquidbounce.event.events.KeyboardKeyEvent
 import net.ccbluex.liquidbounce.event.handler
 import org.lwjgl.glfw.GLFW
 
-object ModuleClickGui :
+object ModuleClickGui17 :
     ClientModule(
         "ClickGUI",
         ModuleCategories.RENDER,
@@ -78,13 +78,13 @@ object ModuleClickGui :
         if (event.action != 1) return@handler
         val code = event.keyCode
         // ESC 关闭: GLFW_KEY_ESCAPE = 256
+        // 【修复】ESC 仅用于关闭, 绝不开打; 只有当前屏幕是 ClickGuiScreen 时才响应
         if (code == GLFW.GLFW_KEY_ESCAPE) {
             val currentScreen = mc.gui.screen()
-            // 【新增】当前屏幕是 ClickGuiScreen 时, 主动关闭 GUI
             if (currentScreen is ClickGuiScreen) {
                 closeGui()
-                return@handler
             }
+            // 无论屏幕是什么状态, ESC 分支到此为止, 不做任何打开操作
             return@handler
         }
         // 只精确响应右 Shift (GLFW_KEY_RIGHT_SHIFT = 344)
